@@ -45,6 +45,9 @@
 
 #include "mem/cache/base.hh"
 
+#include <fstream>
+#include <iomanip>
+
 #include "base/compiler.hh"
 #include "base/logging.hh"
 #include "debug/Cache.hh"
@@ -55,9 +58,9 @@
 #include "debug/HWPrefetch.hh"
 #include "mem/cache/compressors/base.hh"
 #include "mem/cache/mshr.hh"
-#include "mem/cache/mshr_queue.hh"
 #include "mem/cache/prefetch/base.hh"
 #include "mem/cache/queue_entry.hh"
+#include "mem/cache/tags/base_set_assoc.hh"
 #include "mem/cache/tags/compressed_tags.hh"
 #include "mem/cache/tags/partitioning_policies/partition_manager.hh"
 #include "mem/cache/tags/super_blk.hh"
@@ -126,6 +129,9 @@ BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
     // forward snoops is overridden in init() once we can query
     // whether the connected requestor is actually snooping or not
 
+    // added by somani
+    std::cerr << "BaseCache ctor for: " << name() << std::endl;
+
     tempBlock = new TempCacheBlk(blkSize,
         genTagExtractor(tags->params().indexing_policy));
 
@@ -145,6 +151,13 @@ BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
 
 BaseCache::~BaseCache()
 {
+    // added by somani
+    std::cerr << "BaseCache destructor called for: " << name() << std::endl;
+    if (name() == "system.l3cache") {
+        std::cerr << "Dumping L3..." << std::endl;
+        dumpCacheLines("llc_dump.txt");
+    }
+
     delete tempBlock;
 }
 
@@ -183,6 +196,42 @@ BaseCache::CacheResponsePort::processSendRetry()
     // reset the flag and call retry
     mustSendRetry = false;
     sendRetryReq();
+}
+
+// added by somani for L3 dump
+void
+BaseCache::dumpCacheLines(const std::string &filename) const
+{
+    auto *tagStore = dynamic_cast<BaseSetAssoc *>(tags);
+    if (!tagStore) {
+        return;
+    }
+
+    std::ofstream ofs(filename);
+    if (!ofs.is_open()) {
+        return;
+    }
+
+    const unsigned blkSize = this->blkSize;
+
+    tagStore->anyBlk([&](CacheBlk &blk) -> bool {
+        if (!blk.isValid()) {
+            return false;
+        }
+
+        Addr addr = tagStore->regenerateBlkAddr(&blk);
+        const uint8_t *data = blk.data;
+
+        ofs << std::hex << addr << " ";
+
+        for (unsigned i = 0; i < blkSize; ++i) {
+            ofs << std::setw(2) << std::setfill('0') << std::hex
+                << (unsigned)data[i];
+        }
+
+        ofs << "\n";
+        return false; // keep iterating
+    });
 }
 
 Addr
@@ -225,50 +274,6 @@ BaseCache::inRange(Addr addr) const
        }
     }
     return false;
-}
-
-void
-BaseCache::allocateWriteBuffer(PacketPtr pkt, Tick time)
-{
-    // should only see writes or clean evicts here
-    assert(pkt->isWrite() || pkt->cmd == MemCmd::CleanEvict);
-
-    Addr blk_addr = pkt->getBlockAddr(blkSize);
-
-    // If using compression, on evictions the block is decompressed and
-    // the operation's latency is added to the payload delay. Consume
-    // that payload delay here, meaning that the data is always stored
-    // uncompressed in the writebuffer
-    if (compressor) {
-        time += pkt->payloadDelay;
-        pkt->payloadDelay = 0;
-    }
-
-    WriteQueueEntry *wq_entry =
-        writeBuffer.findMatch(blk_addr, pkt->isSecure());
-    if (wq_entry && !wq_entry->inService) {
-        DPRINTF(Cache, "Potential to merge writeback %s", pkt->print());
-    }
-
-    writeBuffer.allocate(blk_addr, blkSize, pkt, time, order++);
-
-    if (writeBuffer.isFull()) {
-        setBlocked((BlockedCause)MSHRQueue_WriteBuffer);
-    }
-
-    // schedule the send
-    schedMemSideSendEvent(time);
-}
-
-void
-BaseCache::markInService(WriteQueueEntry *entry)
-{
-    bool wasFull = writeBuffer.isFull();
-    writeBuffer.markInService(entry);
-
-    if (wasFull && !writeBuffer.isFull()) {
-        clearBlocked(Blocked_NoWBBuffers);
-    }
 }
 
 void
@@ -2582,6 +2587,13 @@ BaseCache::regProbePoints()
     ppDataUpdate =
         new ProbePointArg<CacheDataUpdateProbeArg>(
             this->getProbeManager(), "Data Update");
+
+    if (name() == "system.l3cache") {
+        registerExitCallback([this]() {
+            std::cerr << "Exit callback: dumping L3..." << std::endl;
+            dumpCacheLines("llc_dump.txt");
+        });
+    }
 }
 
 ///////////////
