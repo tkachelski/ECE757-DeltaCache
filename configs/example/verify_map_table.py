@@ -97,7 +97,6 @@ if buildEnv["PROTOCOL"] == "MOESI_hammer":
 if buildEnv["PROTOCOL"] == "MESI_Three_Level":
     check_flush = True
 
-check_flush = False
 tester = RubyTester(
     check_flush=check_flush,
     checks_to_complete=args.maxloads,
@@ -160,6 +159,29 @@ for ruby_port in system.ruby._cpu_ports:
     # copies the subblock back to the checker
     #
     ruby_port.using_ruby_tester = True
+
+# -----------------------------------------------------
+# ECE757 DeltaCache Customization
+# -----------------------------------------------------
+
+map_table = DeltaMapTable(table_entries=1024)
+
+# Try the most common MESI_Two_Level naming conventions
+if hasattr(system.ruby, 'l2_cntrls'):
+    controllers = system.ruby.l2_cntrls
+elif hasattr(system.ruby, 'l2_cntrl_list'):
+    controllers = system.ruby.l2_cntrl_list
+else:
+    # Fallback: search all children of ruby for anything that looks like an L2 controller
+    controllers = [obj for obj in system.ruby.descendants() 
+                   if 'L2Cache_Controller' in str(type(obj))]
+
+if controllers:
+    print(f"Connecting DeltaMapTable to {len(controllers)} L2 controllers...")
+    for l2_cntrl in controllers:
+        l2_cntrl.mapTable = map_table
+else:
+    print("CRITICAL: Could not find L2 controllers to attach DeltaMapTable!")
 
 # -----------------------
 # run simulation
