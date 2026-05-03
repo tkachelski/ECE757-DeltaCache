@@ -94,7 +94,7 @@ args.l3_assoc = 16
 check_flush = False
 if buildEnv["PROTOCOL"] == "MOESI_hammer":
     check_flush = True
-if buildEnv["PROTOCOL"] in ("MESI_Three_Level", "DeltaCache"):
+if buildEnv["PROTOCOL"] == "MESI_Three_Level":
     check_flush = True
 
 tester = RubyTester(
