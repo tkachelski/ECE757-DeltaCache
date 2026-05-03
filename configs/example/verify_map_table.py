@@ -94,7 +94,7 @@ args.l3_assoc = 16
 check_flush = False
 if buildEnv["PROTOCOL"] == "MOESI_hammer":
     check_flush = True
-if buildEnv["PROTOCOL"] == "MESI_Three_Level":
+if buildEnv["PROTOCOL"] in ("MESI_Three_Level", "DeltaCache"):
     check_flush = True
 
 tester = RubyTester(
@@ -166,22 +166,27 @@ for ruby_port in system.ruby._cpu_ports:
 
 map_table = DeltaMapTable(table_entries=1024)
 
-# Try the most common MESI_Two_Level naming conventions
-if hasattr(system.ruby, 'l2_cntrls'):
-    controllers = system.ruby.l2_cntrls
-elif hasattr(system.ruby, 'l2_cntrl_list'):
-    controllers = system.ruby.l2_cntrl_list
-else:
-    # Fallback: search all children of ruby for anything that looks like an L2 controller
-    controllers = [obj for obj in system.ruby.descendants() 
-                   if 'L2Cache_Controller' in str(type(obj))]
+# DeltaCache.py registers each L2 controller as ruby.l2_cntrl0, l2_cntrl1, ...
+# Collect all of them by walking the numbered sequence.
+controllers = []
+idx = 0
+while hasattr(system.ruby, f"l2_cntrl{idx}"):
+    controllers.append(getattr(system.ruby, f"l2_cntrl{idx}"))
+    idx += 1
+
+if not controllers:
+    # Fallback for other protocols that use a list attribute
+    for attr in ("l2_cntrls", "l2_cntrl_list"):
+        if hasattr(system.ruby, attr):
+            controllers = getattr(system.ruby, attr)
+            break
 
 if controllers:
-    print(f"Connecting DeltaMapTable to {len(controllers)} L2 controllers...")
+    print(f"Connecting DeltaMapTable to {len(controllers)} L2 controller(s)...")
     for l2_cntrl in controllers:
         l2_cntrl.mapTable = map_table
 else:
-    print("CRITICAL: Could not find L2 controllers to attach DeltaMapTable!")
+    fatal("Could not find any L2 controllers to attach DeltaMapTable!")
 
 # -----------------------
 # run simulation
