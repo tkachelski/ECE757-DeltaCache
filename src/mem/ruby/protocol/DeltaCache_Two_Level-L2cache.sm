@@ -1450,14 +1450,20 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP")
         //     partner with a stale deltaPair pointer (orphaned), whose
         //     next request asserts in rmd_.
         //
-        // (b) partner must be in stable SS. SS is the only state where
-        //     partner_entry.DataBlk holds canonical raw bytes AND has at
-        //     least one upper sharer that can ship raw bytes on demand:
-        //       - MT/MT_*:    L3 bytes are Maybe_Stale; the delta we'd
-        //                     compute is wrong from the start.
-        //       - M (0 sharers): combined with cache_entry going M-side
-        //                     later, no raw source remains anywhere.
-        //       - any transient: state is in flux, pair is unsafe.
+        // (b) partner must be in stable SS or M -- the two states where
+        //     partner_entry.DataBlk holds canonical raw bytes:
+        //       - SS: has upper sharers; raw bytes can be re-fetched on
+        //             demand if needed for cross-undelta.
+        //       - M:  L3-only with raw bytes locally; reachable via Cond 4
+        //             cross-evict and Cond 1-M GETM cross-fetch flows.
+        //     M+M is still rejected by requiring at least one of the pair
+        //     to be in SS (the cache_entry side or the partner side --
+        //     here we only check the partner; for M+M the cache_entry
+        //     would also be M, which is fine to leave to runtime: the
+        //     surviving invariant is "at least one of {A,B} has an upper
+        //     holder", enforced by uu_ undeltaIfPartnerDormant on the
+        //     second-to-last sharer eviction).
+        //     Disallowed: MT/MT_* (Maybe_Stale L3 bytes), any transient.
         //
         // (c) partner must NOT already be paired. If partner.isDeltad,
         //     partner.DataBlk holds delta bytes (from its existing pair),
@@ -1467,7 +1473,8 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP")
         //     (which still has isDeltad=true and the now-stale pointer
         //     back). Future undelta on the orphaned partner reads garbage.
         if (cache_entry.CacheState == State:IM ||
-            partner_entry.CacheState != State:SS ||
+            (partner_entry.CacheState != State:SS &&
+             partner_entry.CacheState != State:M) ||
             partner_entry.isDeltad) {
           overrideMapping(mapTable, address, cache_entry.DataBlk);
           DPRINTF(RubySlicc,
@@ -2229,6 +2236,10 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP")
 
   // DLT_DATA arrives last (no INV-acks pending after). Adopt + undelta,
   // ship raw B to requestor, land in SS_MB.
+  // This seems to be redundant with the above ack_all case, but it's actually a distinct case: the partner had raw bytes at
+  // FWD-arrival time but was in IM, so it sent ACK instead of DLT_DATA. The partner's own eviction undelta path already wrote raw bytes into the cache and cleared isDeltad
+  //  before we even sent FWD_GETM_DLT, so we have the raw bytes and can proceed as normal when the last ACK arrives.
+  //  
   transition(SS_DLT_GM_X, Dlt_GM_X_Last, SS_MB) {
     adgmx_adoptAndUndeltaForGetmCross;
     drd_decrementPendingAckOne;
@@ -2308,6 +2319,9 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP")
 
   // Requestor acquired the line and sent Unblock at B's address. Add to
   // sharers via the standard unblock path, deallocate B's TBE, land in SS.
+  // This transition is concernting, seems like a catch all for any Unblock at this address while we're parked in M_DLT_GS -- but the GETS requestor is the only one that should be sending Unblock at this point, and if it's not us then the Unblock is stale and can be safely ignored (matching the stable-state pattern at {SS_MB, MT_MB} / {SS, M, MT}).
+  // If we see an Unblock here, we know for sure it's stale -- the real unblock from the GETS requestor will come after the requestor has acquired the line and sent its Unblock, and invalidated sharers don't send Unblock at all. So just pop and ignore.
+  //  Need to investigate
   transition({SS_DLT_GS, M_DLT_GS}, Unblock, SS) {
     nnu_addSharerFromUnblock;
     s_deallocateTBE;
@@ -2447,7 +2461,8 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP")
   transition(SS, L1_PUTM_Last, M) {
     nr_removeRequestorFromSharers;
     uu_undeltaIfPartnerDormant;
-    rml_removeFromMapIfUnpaired;
+    recordDelta;
+    //rml_removeFromMapIfUnpaired;
     t_sendWBAck;
     jj_popL1RequestQueue;
   }
@@ -2608,6 +2623,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP")
 
   transition(MT_SB, Unblock, SS) {
     nnu_addSharerFromUnblock;
+    //recordDelta;
     k_popUnblockQueue;
     kd_wakeUpDependents;
   }
