@@ -1208,8 +1208,8 @@ namespace partitioning_policy
         {
             return addrRanges;
         }
-        void dumpCacheLines(
-            const std::string &filename) const; // added by somani for L3 dump
+        void dumpCacheLines(const std::string &filename) const;
+        void preDumpStats() override;
 
         MSHR *
         allocateMissBuffer(PacketPtr pkt, Tick time, bool sched_send = true)

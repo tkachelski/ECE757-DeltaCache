@@ -136,3 +136,7 @@ print(f"Exiting @ tick {m5.curTick()} because {exit_event.getCause()}")
 # -------------------------
 # with open("llc_dump.txt", "w") as f:
 #     system.l3cache.dumpCacheLines(f)
+dump_path = os.path.join(m5.options.outdir, "llc_dump.txt")
+print(f"Writing LLC dump to {dump_path}")
+system.l3cache.dumpCacheLines(dump_path)
+

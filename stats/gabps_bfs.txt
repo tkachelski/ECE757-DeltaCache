@@ -1,0 +1,54 @@
+
+================ PLAIN BDI ================
+Total lines: 17833
+BDI bytes: 952318
+Original bytes: 1141312
+Final size ratio: 0.834406
+
+================ IDEAL SET XOR PIPELINE ================
+Total lines: 17833
+Compressed pairs: 5223
+Uncompressed lines: 7387
+After XOR bytes: 807040
+After BDI on XOR bytes: 724037
+Final size ratio (XOR→BDI): 0.634390
+
+================ IDEAL SET DELTA PIPELINE ================
+Total lines: 17833
+Compressed pairs: 5223
+Uncompressed lines: 7387
+After DELTA bytes: 807040
+After BDI on DELTA bytes: 721269
+Final size ratio (DELTA→BDI): 0.631965
+
+================ IDEAL BANK XOR PIPELINE ================
+Total lines: 17833
+Compressed pairs: 5894
+Uncompressed lines: 6045
+After XOR bytes: 764096
+After BDI on XOR bytes: 639779
+Final size ratio (XOR→BDI): 0.560565
+
+================ IDEAL BANK DELTA PIPELINE ================
+Total lines: 17833
+Compressed pairs: 5894
+Uncompressed lines: 6045
+After DELTA bytes: 764096
+After BDI on DELTA bytes: 634359
+Final size ratio (DELTA→BDI): 0.555816
+
+================ RANDOM BANK XOR PIPELINE ================
+Total lines: 17833
+Compressed pairs: 2485
+Uncompressed lines: 12863
+After XOR bytes: 982272
+After BDI on XOR bytes: 888410
+Final size ratio (XOR→BDI): 0.778411
+
+================ RANDOM BANK DELTA PIPELINE ================
+Total lines: 17833
+Compressed pairs: 2493
+Uncompressed lines: 12847
+After DELTA bytes: 981760
+After BDI on DELTA bytes: 887034
+Final size ratio (DELTA→BDI): 0.777206

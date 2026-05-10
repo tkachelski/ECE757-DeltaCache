@@ -60,7 +60,6 @@
 #include "mem/cache/mshr.hh"
 #include "mem/cache/prefetch/base.hh"
 #include "mem/cache/queue_entry.hh"
-#include "mem/cache/tags/base_set_assoc.hh"
 #include "mem/cache/tags/compressed_tags.hh"
 #include "mem/cache/tags/partitioning_policies/partition_manager.hh"
 #include "mem/cache/tags/super_blk.hh"
@@ -151,13 +150,6 @@ BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
 
 BaseCache::~BaseCache()
 {
-    // added by somani
-    std::cerr << "BaseCache destructor called for: " << name() << std::endl;
-    if (name() == "system.l3cache") {
-        std::cerr << "Dumping L3..." << std::endl;
-        dumpCacheLines("llc_dump.txt");
-    }
-
     delete tempBlock;
 }
 
@@ -202,24 +194,25 @@ BaseCache::CacheResponsePort::processSendRetry()
 void
 BaseCache::dumpCacheLines(const std::string &filename) const
 {
-    auto *tagStore = dynamic_cast<BaseSetAssoc *>(tags);
-    if (!tagStore) {
+    if (!tags) {
+        std::cerr << "dumpCacheLines: tags is null for " << name() << "\n";
         return;
     }
 
     std::ofstream ofs(filename);
     if (!ofs.is_open()) {
+        std::cerr << "dumpCacheLines: failed to open " << filename << "\n";
         return;
     }
 
     const unsigned blkSize = this->blkSize;
 
-    tagStore->anyBlk([&](CacheBlk &blk) -> bool {
+    tags->anyBlk([&](CacheBlk &blk) -> bool {
         if (!blk.isValid()) {
             return false;
         }
 
-        Addr addr = tagStore->regenerateBlkAddr(&blk);
+        Addr addr = tags->regenerateBlkAddr(&blk);
         const uint8_t *data = blk.data;
 
         ofs << std::hex << addr << " ";
@@ -2588,11 +2581,15 @@ BaseCache::regProbePoints()
         new ProbePointArg<CacheDataUpdateProbeArg>(
             this->getProbeManager(), "Data Update");
 
+}
+
+void
+BaseCache::preDumpStats()
+{
+    statistics::Group::preDumpStats();
     if (name() == "system.l3cache") {
-        registerExitCallback([this]() {
-            std::cerr << "Exit callback: dumping L3..." << std::endl;
-            dumpCacheLines("llc_dump.txt");
-        });
+        std::cerr << "preDumpStats: dumping L3..." << std::endl;
+        dumpCacheLines("llc_dump.txt");
     }
 }
 
